@@ -171,13 +171,13 @@ law_pilot/
 - [x] Core module files created
 - [x] CLI entry point implemented
 - [x] Dependencies specification (requirements.txt)
-- [ ] Virtual environment setup and testing
+- [x] Virtual environment setup and testing
 
 ### Phase 2: Document Processing
-- [ ] PDF text extraction implementation
-- [ ] Document type classification
-- [ ] Entity extraction (dates, amounts, GSTIN)
-- [ ] Metadata parsing
+- [x] PDF text extraction implementation
+- [x] Document type classification
+- [x] Entity extraction (dates, amounts, GSTIN)
+- [x] Metadata parsing
 
 ### Phase 3: Analysis Engine
 - [ ] Chronology builder
