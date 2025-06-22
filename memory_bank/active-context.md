@@ -11,17 +11,24 @@
 
 ### ✅ Major Milestones Completed
 
-#### 1. OCR Implementation Success (22/06/2025)
-- **Breakthrough**: Successfully implemented Tesseract OCR with Poppler integration
-- **Impact**: Can now process image-based/scanned PDFs that were previously unreadable
-- **Performance**: Extracting 1,204-21,417 characters per document
+#### 1. Docling Integration Success (22/06/2025)
+- **Breakthrough**: Successfully implemented Docling as primary extraction method
+- **Impact**: Structured markdown output with preserved document layout and formatting
+- **Performance**: Extracting 1,738-8,642 characters per document with superior quality
 - **Coverage**: 100% success rate on test documents (7 PDFs across 2 case folders)
+- **Quality Improvement**: Massive upgrade from fragmented OCR text to structured markdown
 
-#### 2. Multi-Tier Document Processing Pipeline
-- **Primary**: pdfplumber for text-based PDFs
-- **Secondary**: PyPDF2 fallback for problematic PDFs
-- **Tertiary**: OCR with multiple configuration attempts
-- **Result**: Robust extraction system handling all document types
+#### 2. Enhanced Multi-Tier Document Processing Pipeline
+- **Primary**: Docling for structured markdown extraction
+- **Secondary**: pdfplumber fallback for text-based PDFs
+- **Tertiary**: PyPDF2 fallback for problematic PDFs
+- **Quaternary**: OCR with multiple configuration attempts
+- **Result**: Robust 4-tier extraction system with superior text quality
+
+#### 3. Previous OCR Implementation (22/06/2025)
+- **Foundation**: Successfully implemented Tesseract OCR with Poppler integration
+- **Fallback Role**: Now serves as final fallback for image-based PDFs
+- **Integration**: Seamlessly integrated into multi-tier pipeline
 
 #### 3. Real Document Testing
 - **Test Cases**: 2 complete case folders with 7 PDF documents

@@ -78,25 +78,29 @@ graph LR
     A[Input Document] --> B{File Type?}
     B -->|PDF| C[PDF Processor]
     B -->|TXT| D[Text Processor]
-    C --> E{Text Extractable?}
-    E -->|Yes| F[pdfplumber]
-    E -->|No| G[PyPDF2 Fallback]
-    G --> H{Success?}
-    H -->|No| I[OCR Engine]
-    I --> J[Tesseract]
-    F --> K[Extracted Text]
-    G --> K
-    J --> K
-    D --> K
-    K --> L[Metadata Generation]
-    L --> M[Output: Text + Metadata]
+    C --> E[Docling Primary]
+    E --> F{Success?}
+    F -->|Yes| G[Structured Markdown]
+    F -->|No| H[pdfplumber Fallback]
+    H --> I{Success?}
+    I -->|Yes| G
+    I -->|No| J[PyPDF2 Fallback]
+    J --> K{Success?}
+    K -->|Yes| G
+    K -->|No| L[OCR Engine]
+    L --> M[Tesseract]
+    M --> G
+    D --> G
+    G --> N[Metadata Generation]
+    N --> O[Output: Markdown + Metadata]
 ```
 
 **Key Features**:
-- Multi-tier extraction strategy
+- 4-tier extraction strategy with Docling primary
+- Structured markdown output with preserved formatting
 - OCR fallback for image-based PDFs
-- Metadata preservation
-- Error handling and logging
+- Metadata preservation and extraction method tracking
+- Enhanced error handling and logging
 
 #### Document Classifier
 ```mermaid

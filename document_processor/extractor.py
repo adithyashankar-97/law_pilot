@@ -10,6 +10,7 @@ import PyPDF2
 import pdfplumber
 from pathlib import Path
 import logging
+from docling.document_converter import DocumentConverter
 
 # OCR imports
 try:
@@ -52,6 +53,11 @@ class DocumentExtractor:
         else:
             raise ValueError(f"Unsupported file format: {file_extension}")
     
+    def extract_docling(self, file_path: str) -> Dict[str, Any]:
+        converter = DocumentConverter()
+        result = converter.convert(file_path)
+        return result.document
+
     def _extract_pdf_text(self, file_path: str) -> Dict[str, Any]:
         """Extract text from PDF using multiple methods."""
         text_content = ""
@@ -59,53 +65,61 @@ class DocumentExtractor:
             'file_path': file_path,
             'file_type': 'pdf',
             'pages': 0,
-            'extraction_method': 'pdfplumber',
+            'extraction_method': 'docling',
             'extraction_issues': []
         }
-        
-        # Method 1: Try pdfplumber first
+        # Method 1: Try docling first
         try:
-            with pdfplumber.open(file_path) as pdf:
-                metadata['pages'] = len(pdf.pages)
-                for i, page in enumerate(pdf.pages):
-                    try:
-                        page_text = page.extract_text()
-                        if page_text and page_text.strip():
-                            text_content += page_text + "\n"
-                        else:
-                            # Try alternative extraction methods for this page
-                            page_text = page.extract_text(layout=True)
-                            if page_text and page_text.strip():
-                                text_content += page_text + "\n"
-                    except Exception as page_error:
-                        metadata['extraction_issues'].append(f"Page {i+1}: {str(page_error)}")
-                        continue
-                        
+            docling_doc = self.extract_docling(file_path)
+            text_content = docling_doc.export_to_markdown()
+            metadata["pages"] = docling_doc.num_pages()
         except Exception as e:
-            metadata['extraction_issues'].append(f"pdfplumber failed: {str(e)}")
-            
-            # Method 2: Fallback to PyPDF2
+            metadata["extraction_issues"].append(f"docling failed: {str(e)}")
+        
+            # Method 2: Try pdfplumber first
             try:
-                with open(file_path, 'rb') as file:
-                    pdf_reader = PyPDF2.PdfReader(file)
-                    metadata['pages'] = len(pdf_reader.pages)
-                    metadata['extraction_method'] = 'PyPDF2'
-                    
-                    for i, page in enumerate(pdf_reader.pages):
+                with pdfplumber.open(file_path) as pdf:
+                    metadata['pages'] = len(pdf.pages)
+                    metadata["extraction_method"] = "pdfplumber"
+                    for i, page in enumerate(pdf.pages):
                         try:
                             page_text = page.extract_text()
                             if page_text and page_text.strip():
                                 text_content += page_text + "\n"
+                            else:
+                                # Try alternative extraction methods for this page
+                                page_text = page.extract_text(layout=True)
+                                if page_text and page_text.strip():
+                                    text_content += page_text + "\n"
                         except Exception as page_error:
-                            metadata['extraction_issues'].append(f"PyPDF2 Page {i+1}: {str(page_error)}")
+                            metadata['extraction_issues'].append(f"Page {i+1}: {str(page_error)}")
                             continue
                             
-            except Exception as fallback_error:
-                metadata['extraction_issues'].append(f"PyPDF2 failed: {str(fallback_error)}")
-        
+            except Exception as e:
+                metadata['extraction_issues'].append(f"pdfplumber failed: {str(e)}")
+                
+                # Method 3: Fallback to PyPDF2
+                try:
+                    with open(file_path, 'rb') as file:
+                        pdf_reader = PyPDF2.PdfReader(file)
+                        metadata['pages'] = len(pdf_reader.pages)
+                        metadata['extraction_method'] = 'PyPDF2'
+                        
+                        for i, page in enumerate(pdf_reader.pages):
+                            try:
+                                page_text = page.extract_text()
+                                if page_text and page_text.strip():
+                                    text_content += page_text + "\n"
+                            except Exception as page_error:
+                                metadata['extraction_issues'].append(f"PyPDF2 Page {i+1}: {str(page_error)}")
+                                continue
+                                
+                except Exception as fallback_error:
+                    metadata['extraction_issues'].append(f"PyPDF2 failed: {str(fallback_error)}")
+            
         # Check if we got any text
         if not text_content.strip():
-            # Method 3: Try OCR if available
+            # Method 4: Try OCR if available
             if OCR_AVAILABLE:
                 metadata['extraction_issues'].append("Attempting OCR extraction for image-based PDF")
                 try:
