@@ -2,6 +2,7 @@
 Document Text Extraction Module
 
 Handles PDF and document text extraction for GST legal documents.
+Enhanced with advanced docling integration using latest API patterns.
 """
 
 import os
@@ -10,7 +11,16 @@ import PyPDF2
 import pdfplumber
 from pathlib import Path
 import logging
-from docling.document_converter import DocumentConverter
+
+# Enhanced docling imports with latest API
+try:
+    from docling.document_converter import DocumentConverter, PdfFormatOption, WordFormatOption, PowerpointFormatOption
+    from docling.datamodel.pipeline_options import PdfPipelineOptions, TableFormerMode
+    from docling.datamodel.base_models import InputFormat
+    from docling_core.types.doc import ImageRefMode
+    DOCLING_AVAILABLE = True
+except ImportError:
+    DOCLING_AVAILABLE = False
 
 # OCR imports
 try:
@@ -26,10 +36,55 @@ logging.getLogger("pdfplumber").setLevel(logging.ERROR)
 
 
 class DocumentExtractor:
-    """Extract text content from various document formats."""
+    """Extract text content from various document formats with enhanced docling support."""
     
-    def __init__(self):
-        self.supported_formats = ['.pdf', '.txt']
+    def __init__(self, save_images=True, image_descriptions=True):
+        self.supported_formats = ['.pdf', '.txt', '.docx', '.pptx']
+        self.save_images = save_images
+        self.image_descriptions = image_descriptions
+        
+        # Create images directory
+        self.images_dir = Path("data/extracted_images")
+        self.images_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Setup docling converter once
+        self._setup_docling_converter()
+    
+    def _setup_docling_converter(self):
+        """Setup the docling converter with enhanced options."""
+        if not DOCLING_AVAILABLE:
+            self.docling_converter = None
+            return
+        
+        try:
+            # Setup enhanced pipeline options
+            pipeline_options = PdfPipelineOptions()
+            pipeline_options.do_table_structure = True
+            pipeline_options.table_structure_options.mode = TableFormerMode.ACCURATE
+            pipeline_options.generate_picture_images = True
+            pipeline_options.generate_page_images = True
+            pipeline_options.images_scale = 2.0
+            pipeline_options.do_picture_classification = True
+            
+            # Create converter with all format support
+            format_options = {
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
+            }
+            
+            # Add office formats if available
+            try:
+                format_options.update({
+                    InputFormat.DOCX: WordFormatOption(),
+                    InputFormat.PPTX: PowerpointFormatOption()
+                })
+            except Exception:
+                pass  # Office formats not available
+            
+            self.docling_converter = DocumentConverter(format_options=format_options)
+            
+        except Exception as e:
+            logging.warning(f"Failed to setup docling converter: {str(e)}")
+            self.docling_converter = None
     
     def extract_text(self, file_path: str) -> Dict[str, Any]:
         """
@@ -48,101 +103,226 @@ class DocumentExtractor:
         
         if file_extension == '.pdf':
             return self._extract_pdf_text(file_path)
+        elif file_extension in ['.docx', '.pptx']:
+            return self._extract_office_text(file_path)
         elif file_extension == '.txt':
             return self._extract_txt_text(file_path)
         else:
             raise ValueError(f"Unsupported file format: {file_extension}")
     
-    def extract_docling(self, file_path: str) -> Dict[str, Any]:
-        converter = DocumentConverter()
-        result = converter.convert(file_path)
-        return result.document
-
+    def _extract_office_text(self, file_path: str) -> Dict[str, Any]:
+        """Extract text from Office documents (DOCX, PPTX) using docling."""
+        metadata = {
+            'file_path': file_path,
+            'file_type': Path(file_path).suffix.lower()[1:],  # Remove the dot
+            'extraction_issues': []
+        }
+        
+        if DOCLING_AVAILABLE and self.docling_converter:
+            try:
+                text_content, docling_metadata = self._extract_with_docling_latest(file_path)
+                metadata.update(docling_metadata)
+                metadata['extraction_method'] = 'docling_enhanced'
+                
+                if text_content and text_content.strip():
+                    return {
+                        'text': text_content.strip(),
+                        'metadata': metadata
+                    }
+                else:
+                    metadata['extraction_issues'].append("Docling returned empty content")
+            except Exception as e:
+                metadata['extraction_issues'].append(f"Docling enhanced failed: {str(e)}")
+        else:
+            metadata['extraction_issues'].append("Docling not available")
+        
+        # Fallback for office documents
+        metadata['extraction_method'] = 'failed'
+        metadata['extraction_issues'].append("No suitable extraction method for office documents without docling")
+        text_content = f"[{metadata['file_type'].upper()} file - requires docling for processing]"
+        
+        return {
+            'text': text_content,
+            'metadata': metadata
+        }
+    
     def _extract_pdf_text(self, file_path: str) -> Dict[str, Any]:
-        """Extract text from PDF using multiple methods."""
-        text_content = ""
+        """Extract text from PDF using 4-tier strategy with enhanced docling primary."""
         metadata = {
             'file_path': file_path,
             'file_type': 'pdf',
-            'pages': 0,
-            'extraction_method': 'docling',
             'extraction_issues': []
         }
-        # Method 1: Try docling first
-        try:
-            docling_doc = self.extract_docling(file_path)
-            text_content = docling_doc.export_to_markdown()
-            metadata["pages"] = docling_doc.num_pages()
-        except Exception as e:
-            metadata["extraction_issues"].append(f"docling failed: {str(e)}")
         
-            # Method 2: Try pdfplumber first
+        # Method 1: Enhanced Docling (Primary) - using latest API
+        if DOCLING_AVAILABLE and self.docling_converter:
             try:
-                with pdfplumber.open(file_path) as pdf:
-                    metadata['pages'] = len(pdf.pages)
-                    metadata["extraction_method"] = "pdfplumber"
-                    for i, page in enumerate(pdf.pages):
-                        try:
-                            page_text = page.extract_text()
-                            if page_text and page_text.strip():
-                                text_content += page_text + "\n"
-                            else:
-                                # Try alternative extraction methods for this page
-                                page_text = page.extract_text(layout=True)
-                                if page_text and page_text.strip():
-                                    text_content += page_text + "\n"
-                        except Exception as page_error:
-                            metadata['extraction_issues'].append(f"Page {i+1}: {str(page_error)}")
-                            continue
-                            
-            except Exception as e:
-                metadata['extraction_issues'].append(f"pdfplumber failed: {str(e)}")
+                text_content, docling_metadata = self._extract_with_docling_latest(file_path)
+                metadata.update(docling_metadata)
+                metadata['extraction_method'] = 'docling_enhanced'
                 
-                # Method 3: Fallback to PyPDF2
-                try:
-                    with open(file_path, 'rb') as file:
-                        pdf_reader = PyPDF2.PdfReader(file)
-                        metadata['pages'] = len(pdf_reader.pages)
-                        metadata['extraction_method'] = 'PyPDF2'
-                        
-                        for i, page in enumerate(pdf_reader.pages):
-                            try:
-                                page_text = page.extract_text()
-                                if page_text and page_text.strip():
-                                    text_content += page_text + "\n"
-                            except Exception as page_error:
-                                metadata['extraction_issues'].append(f"PyPDF2 Page {i+1}: {str(page_error)}")
-                                continue
-                                
-                except Exception as fallback_error:
-                    metadata['extraction_issues'].append(f"PyPDF2 failed: {str(fallback_error)}")
-            
-        # Check if we got any text
-        if not text_content.strip():
-            # Method 4: Try OCR if available
-            if OCR_AVAILABLE:
-                metadata['extraction_issues'].append("Attempting OCR extraction for image-based PDF")
-                try:
-                    ocr_text = self._extract_pdf_with_ocr(file_path)
-                    if ocr_text and ocr_text.strip():
-                        text_content = ocr_text
-                        metadata['extraction_method'] = 'OCR'
-                        metadata['extraction_issues'].append("Successfully extracted text using OCR")
-                    else:
-                        metadata['extraction_issues'].append("OCR extraction failed - no text found")
-                        text_content = "[PDF processed with OCR but no text could be extracted.]"
-                except Exception as ocr_error:
-                    metadata['extraction_issues'].append(f"OCR failed: {str(ocr_error)}")
-                    text_content = "[PDF appears to be image-based. OCR processing failed.]"
-            else:
-                metadata['extraction_method'] = 'failed'
-                metadata['extraction_issues'].append("No text extracted - PDF may be image-based. OCR libraries not available.")
-                text_content = "[PDF appears to be image-based. OCR libraries not installed.]"
+                if text_content and text_content.strip():
+                    return {
+                        'text': text_content.strip(),
+                        'metadata': metadata
+                    }
+                else:
+                    metadata['extraction_issues'].append("Docling returned empty content")
+            except Exception as e:
+                metadata['extraction_issues'].append(f"Docling enhanced failed: {str(e)}")
+        else:
+            metadata['extraction_issues'].append("Docling not available")
+        
+        # Method 2: pdfplumber (Fallback 1)
+        try:
+            with pdfplumber.open(file_path) as pdf:
+                text_content = ""
+                for page in pdf.pages:
+                    try:
+                        page_text = page.extract_text()
+                        if page_text:
+                            text_content += page_text + "\n"
+                    except Exception:
+                        continue
+                
+                metadata['pages'] = len(pdf.pages)
+                
+                if text_content and text_content.strip():
+                    metadata['extraction_method'] = 'pdfplumber'
+                    return {
+                        'text': text_content.strip(),
+                        'metadata': metadata
+                    }
+                else:
+                    metadata['extraction_issues'].append("pdfplumber returned empty content")
+        except Exception as e:
+            metadata['extraction_issues'].append(f"pdfplumber failed: {str(e)}")
+        
+        # Method 3: PyPDF2 (Fallback 2)
+        try:
+            with open(file_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                text_content = ""
+                for page in pdf_reader.pages:
+                    try:
+                        text_content += page.extract_text() + "\n"
+                    except Exception:
+                        continue
+                
+                metadata['pages'] = len(pdf_reader.pages)
+                
+                if text_content and text_content.strip():
+                    metadata['extraction_method'] = 'pypdf2'
+                    return {
+                        'text': text_content.strip(),
+                        'metadata': metadata
+                    }
+                else:
+                    metadata['extraction_issues'].append("PyPDF2 returned empty content")
+        except Exception as e:
+            metadata['extraction_issues'].append(f"PyPDF2 failed: {str(e)}")
+        
+        # Method 4: OCR (Final Fallback)
+        if OCR_AVAILABLE:
+            try:
+                text_content = self._extract_pdf_with_ocr(file_path)
+                metadata['extraction_method'] = 'ocr'
+                
+                if text_content and text_content.strip():
+                    return {
+                        'text': text_content.strip(),
+                        'metadata': metadata
+                    }
+                else:
+                    metadata['extraction_issues'].append("OCR returned empty content")
+            except Exception as e:
+                metadata['extraction_issues'].append(f"OCR failed: {str(e)}")
+                text_content = "[PDF appears to be image-based. OCR processing failed.]"
+        else:
+            metadata['extraction_method'] = 'failed'
+            metadata['extraction_issues'].append("No text extracted - PDF may be image-based. OCR libraries not available.")
+            text_content = "[PDF appears to be image-based. OCR libraries not installed.]"
         
         return {
             'text': text_content.strip(),
             'metadata': metadata
         }
+    
+    def _extract_with_docling_latest(self, file_path: str) -> tuple[str, Dict[str, Any]]:
+        """Extract text using latest docling API with automatic image handling."""
+        try:
+            # Convert document using the pre-configured converter
+            result = self.docling_converter.convert(file_path)
+            doc = result.document
+            
+            # Create document-specific output directory for markdown and images
+            doc_name = Path(file_path).stem
+            output_dir = Path.cwd()  # Save markdown in current directory
+            
+            # Create images directory for this document
+            doc_image_dir = self.images_dir / doc_name
+            doc_image_dir.mkdir(exist_ok=True)
+            
+            # Save as markdown with proper image handling (latest API pattern)
+            markdown_file = output_dir / f"{doc_name}.md"
+            
+            if self.save_images:
+                # Use REFERENCED mode to save images separately and create references
+                doc.save_as_markdown(
+                    filename=str(markdown_file), 
+                    image_mode=ImageRefMode.REFERENCED
+                )
+            else:
+                # Use PLACEHOLDER mode for image placeholders without saving files
+                doc.save_as_markdown(
+                    filename=str(markdown_file), 
+                    image_mode=ImageRefMode.PLACEHOLDER
+                )
+            
+            # Read the generated markdown content
+            with open(markdown_file, "r", encoding="utf-8") as f:
+                markdown_content = f.read()
+            
+            # Count images and tables for metadata
+            image_count = self._count_markdown_images(markdown_content)
+            table_count = self._count_markdown_tables(markdown_content)
+            
+            # Prepare metadata
+            metadata = {
+                'extraction_method': 'docling_enhanced',
+                'pages': len(doc.pages) if hasattr(doc, 'pages') else None,
+                'tables_found': table_count,
+                'images_extracted': image_count,
+                'markdown_saved': str(markdown_file),
+                'extraction_issues': []
+            }
+            
+            return markdown_content, metadata
+            
+        except Exception as e:
+            raise Exception(f"Enhanced docling extraction failed: {str(e)}")
+    
+    def _count_markdown_images(self, markdown_content: str) -> int:
+        """Count image references in markdown content."""
+        try:
+            # Count ![...] patterns (markdown image syntax)
+            import re
+            image_pattern = r'!\[.*?\]\(.*?\)'
+            images = re.findall(image_pattern, markdown_content)
+            return len(images)
+        except:
+            return 0
+    
+    def _count_markdown_tables(self, markdown_content: str) -> int:
+        """Count tables in markdown content."""
+        try:
+            # Count markdown table patterns (lines with |)
+            lines = markdown_content.split('\n')
+            table_lines = [line for line in lines if '|' in line and '---' not in line]
+            # Estimate table count (rough approximation)
+            return len(table_lines) // 3 if table_lines else 0
+        except:
+            return 0
     
     def _extract_pdf_with_ocr(self, file_path: str) -> str:
         """Extract text from PDF using OCR."""
