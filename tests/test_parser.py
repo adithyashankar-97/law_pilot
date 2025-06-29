@@ -15,7 +15,8 @@ from document_processor import DocumentExtractor, DocumentClassifier, EntityPars
 
 
 def test_document_extractor(file_path):
-    """Test the DocumentExtractor component."""
+    """Test the DocumentExtractor component with enhanced docling features."""
+    """Test the DocumentExtractor component with enhanced docling features."""
     print(f"\n🔍 TESTING DOCUMENT EXTRACTOR")
     print(f"File: {file_path}")
     print("-" * 50)
@@ -33,6 +34,41 @@ def test_document_extractor(file_path):
         print(f"📝 Text length: {len(text)} characters")
         print(f"📝 Word count: {len(text.split())} words")
         
+        # Enhanced docling-specific metrics
+        if metadata.get('extraction_method') == 'docling_enhanced':
+            print(f"📊 Tables found: {metadata.get('tables_found', 0)}")
+            print(f"🖼️  Images extracted: {metadata.get('images_extracted', 0)}")
+            
+            # Show markdown file info if available
+            markdown_file = metadata.get('markdown_saved')
+            if markdown_file:
+                markdown_path = Path(markdown_file)
+                if markdown_path.exists():
+                    file_size = markdown_path.stat().st_size
+                    print(f"💾 Markdown saved: {markdown_path.name} ({file_size} bytes)")
+            
+            # Detect markdown features in extracted text
+            markdown_features = []
+            if '|' in text and '---' in text:
+                markdown_features.append("Tables")
+            if '![' in text and '](' in text:
+                markdown_features.append("Image references")
+            if '#' in text:
+                markdown_features.append("Headers")
+            if '```' in text:
+                markdown_features.append("Code blocks")
+            
+            if markdown_features:
+                print(f"🔍 Markdown features: {', '.join(markdown_features)}")
+            
+            # Check for images directory
+            doc_name = Path(file_path).stem
+            images_dir = Path("data/extracted_images") / doc_name
+            if images_dir.exists():
+                image_files = list(images_dir.glob("*.png")) + list(images_dir.glob("*.jpg"))
+                if image_files:
+                    print(f"📁 Images directory: {len(image_files)} file(s) in {images_dir}")
+        
         # Show extraction issues if any
         extraction_issues = metadata.get('extraction_issues', [])
         if extraction_issues:
@@ -43,12 +79,62 @@ def test_document_extractor(file_path):
         # Show first 500 characters
         print(f"\n📖 EXTRACTED TEXT PREVIEW:")
         print("-" * 30)
-        print(text[:500] + "..." if len(text) > 500 else text)
+        preview_text = text[:500]
+        # Replace multiple newlines with single space for cleaner preview
+        preview_text = ' '.join(preview_text.split())
+        print(preview_text + "..." if len(text) > 500 else preview_text)
+        
+        # Show extraction quality assessment
+        print(f"\n📈 EXTRACTION QUALITY ASSESSMENT:")
+        print("-" * 35)
+        
+        # Text quality indicators
+        quality_score = 0
+        quality_indicators = []
+        
+        if len(text) > 100:
+            quality_score += 1
+            quality_indicators.append("✅ Sufficient text length")
+        else:
+            quality_indicators.append("⚠️  Short text extracted")
+        
+        if metadata.get('extraction_method') == 'docling_enhanced':
+            quality_score += 2
+            quality_indicators.append("✅ Enhanced docling extraction")
+        elif metadata.get('extraction_method') in ['pdfplumber', 'pypdf2']:
+            quality_score += 1
+            quality_indicators.append("✅ Standard PDF extraction")
+        elif metadata.get('extraction_method') == 'ocr':
+            quality_indicators.append("⚠️  OCR fallback used")
+        
+        if metadata.get('tables_found', 0) > 0:
+            quality_score += 1
+            quality_indicators.append("✅ Tables detected and preserved")
+        
+        if metadata.get('images_extracted', 0) > 0:
+            quality_score += 1
+            quality_indicators.append("✅ Images extracted successfully")
+        
+        if not extraction_issues:
+            quality_score += 1
+            quality_indicators.append("✅ No extraction issues")
+        
+        # Display quality assessment
+        for indicator in quality_indicators:
+            print(f"   {indicator}")
+        
+        quality_level = "Excellent" if quality_score >= 4 else "Good" if quality_score >= 2 else "Basic"
+        print(f"   📊 Overall Quality: {quality_level} ({quality_score}/5)")
         
         return result
         
     except Exception as e:
         print(f"❌ Extraction failed: {str(e)}")
+        print(f"🔧 This might be due to:")
+        print(f"   • Unsupported file format")
+        print(f"   • File corruption or access issues")
+        print(f"   • Missing dependencies (docling, OCR libraries)")
+        print(f"   • File permission problems")
         return None
 
 
