@@ -32,7 +32,6 @@ google-generativeai
 sentence-transformers
 torch
 nest-asyncio
-python-dotenv
 
 # Regular Expressions (built-in, but for reference)
 # re (built-in)
