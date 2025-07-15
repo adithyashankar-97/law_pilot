@@ -38,18 +38,152 @@ logging.getLogger("pdfplumber").setLevel(logging.ERROR)
 class DocumentExtractor:
     """Extract text content from various document formats with enhanced docling support."""
     
-    def __init__(self, save_images=True, image_descriptions=True):
+    def __init__(self, save_images=True, image_descriptions=True, 
+             source_dir="./data/source_docs", markdown_dir="./data/markdown_files"):
         self.supported_formats = ['.pdf', '.txt', '.docx', '.pptx']
         self.save_images = save_images
         self.image_descriptions = image_descriptions
         
-        # Create images directory
+        # Add folder paths
+        self.source_dir = Path(source_dir)
+        self.markdown_dir = Path(markdown_dir)
+        
+        # Create directories
         self.images_dir = Path("data/extracted_images")
         self.images_dir.mkdir(parents=True, exist_ok=True)
+        self.source_dir.mkdir(parents=True, exist_ok=True)
+        self.markdown_dir.mkdir(parents=True, exist_ok=True)
         
         # Setup docling converter once
         self._setup_docling_converter()
-    
+    def extract_folder(self, skip_existing=True) -> List[Dict[str, Any]]:
+        """
+        Extract text from all documents in source folder (like script_insert)
+        
+        Args:
+            skip_existing (bool): Skip if markdown file already exists
+            
+        Returns:
+            List of extraction results with metadata
+        """
+        print(f"🚀 Processing documents from: {self.source_dir}")
+        
+        # Find all documents
+        source_files = []
+        for ext in self.supported_formats:
+            pattern = f"*{ext}"
+            source_files.extend(self.source_dir.glob(pattern))
+        
+        if not source_files:
+            print(f"📄 No documents found in {self.source_dir}")
+            return []
+        
+        print(f"📄 Found {len(source_files)} documents to process")
+        
+        results = []
+        
+        for file_path in source_files:
+            try:
+                # Check if we should skip
+                markdown_path = self.markdown_dir / f"{file_path.stem}.md"
+                
+                if skip_existing and markdown_path.exists():
+                    print(f"⏭️  Skipping {file_path.name} (markdown exists)")
+                    results.append({
+                        'source_file': str(file_path),
+                        'markdown_file': str(markdown_path),
+                        'status': 'skipped',
+                        'reason': 'already_exists'
+                    })
+                    continue
+                
+                print(f"🔄 Processing {file_path.name}...")
+                
+                # Extract using your existing method
+                result = self.extract_text(str(file_path))
+                
+                # Move the markdown file to proper location
+                self._move_markdown_to_folder(file_path, result)
+                
+                results.append({
+                    'source_file': str(file_path),
+                    'markdown_file': str(markdown_path),
+                    'status': 'success',
+                    'text_length': len(result['text']),
+                    'extraction_method': result['metadata'].get('extraction_method'),
+                    'metadata': result['metadata']
+                })
+                
+                print(f"✅ Processed {file_path.name}")
+                
+            except Exception as e:
+                print(f"❌ Failed to process {file_path.name}: {str(e)}")
+                results.append({
+                    'source_file': str(file_path),
+                    'status': 'error',
+                    'error': str(e)
+                })
+        
+        # Summary
+        success_count = sum(1 for r in results if r['status'] == 'success')
+        skipped_count = sum(1 for r in results if r['status'] == 'skipped')
+        error_count = sum(1 for r in results if r['status'] == 'error')
+        
+        print(f"\n📊 Processing Summary:")
+        print(f"   ✅ Processed: {success_count}")
+        print(f"   ⏭️  Skipped: {skipped_count}")
+        print(f"   ❌ Errors: {error_count}")
+        
+        return results
+
+    def _move_markdown_to_folder(self, source_path: Path, extraction_result: Dict):
+        """Move markdown file from current directory to markdown folder"""
+        
+        # Current markdown file location (your existing code saves here)
+        current_md = Path.cwd() / f"{source_path.stem}.md"
+        
+        # Target location
+        target_md = self.markdown_dir / f"{source_path.stem}.md"
+        
+        try:
+            if current_md.exists():
+                # Move to proper folder
+                current_md.rename(target_md)
+                
+                # Update metadata to reflect new location
+                if 'metadata' in extraction_result:
+                    extraction_result['metadata']['markdown_saved'] = str(target_md)
+        
+        except Exception as e:
+            logging.warning(f"Failed to move markdown file: {e}")
+
+    def get_markdown_files(self) -> List[Dict[str, Any]]:
+        """
+        Get all processed markdown files (for LightRAG)
+        
+        Returns:
+            List of markdown files with content and metadata
+        """
+        markdown_files = []
+        
+        for md_path in self.markdown_dir.glob("*.md"):
+            try:
+                with open(md_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                markdown_files.append({
+                    'file_path': str(md_path),
+                    'file_name': md_path.name,
+                    'content': content,
+                    'doc_id': md_path.stem,  # For LightRAG
+                    'size': md_path.stat().st_size
+                })
+                
+            except Exception as e:
+                logging.error(f"Error reading {md_path}: {e}")
+        
+        print(f"📝 Found {len(markdown_files)} markdown files")
+        return markdown_files
     def _setup_docling_converter(self):
         """Setup the docling converter with enhanced options."""
         if not DOCLING_AVAILABLE:
@@ -257,7 +391,7 @@ class DocumentExtractor:
             
             # Create document-specific output directory for markdown and images
             doc_name = Path(file_path).stem
-            output_dir = Path.cwd()  # Save markdown in current directory
+            output_dir = self.markdown_dir  # Use markdown_dir instead of current directory
             
             # Create images directory for this document
             doc_image_dir = self.images_dir / doc_name
