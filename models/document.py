@@ -10,8 +10,8 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 from enum import Enum
 from dataclasses import dataclass, field
-
-
+from document_processor.lightrag_config import llm_model_func
+from ast import literal_eval
 class DocumentType(Enum):
     """Enumeration of supported document types."""
     SHOW_CAUSE_NOTICE = "show_cause_notice"
@@ -127,6 +127,8 @@ class Document:
         # Additional metadata
         self.tags: List[str] = []
         self.notes: str = ""
+        self.doc_event_summary: str = ""
+        self.doc_action_date: str = ""
         
         # Add initial processing entry
         self._add_processing_entry("Document initialized")
@@ -160,6 +162,7 @@ class Document:
             'text_length': len(text_md),
             'pages': metadata.pages if metadata else None
         })
+        self.summarize_doc_text()
     
     def set_classification(self, classification: ClassificationResult):
         """
@@ -341,3 +344,45 @@ class Document:
                 f"stage={self.current_stage.value}, "
                 f"errors={len(self.errors)}, "
                 f"warnings={len(self.warnings)})")
+    
+    def summarize_doc_text(self):
+        """Get a brief summary of the document text."""
+        try:
+            # async def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs)
+            sys_prompt = '''
+            Summarize the following document in a single sentence, focus on who sent it to whom and on which date they sent it.
+            give me a single line summary, return a python dictionary with fields: action_date, summary_text where action date represents the date that particular event/docuement has happened 
+            and summary_text represents the single line summary of the document.
+        
+            If you cannot find the date, return "unknown" for action_date.
+            response format:
+            {"action_date": "DD-MM-YYYY or unknown", "summary_text": "single line summary"}
+            response should only contain the above text in the above specified format nothing more than that.
+            '''
+            llm_resp = llm_model_func(self.text_plain, system_prompt=sys_prompt)
+            
+            # Clean the response - remove markdown formatting if present
+            llm_resp = llm_resp.strip()
+            if llm_resp.startswith('```'):
+                # Remove markdown code block formatting
+                lines = llm_resp.split('\n')
+                # Find the actual JSON content between ```
+                json_lines = []
+                in_json = False
+                for line in lines:
+                    if line.startswith('```'):
+                        in_json = not in_json
+                    elif in_json:
+                        json_lines.append(line)
+                llm_resp = '\n'.join(json_lines)
+            
+            # Parse the cleaned response
+            result = literal_eval(llm_resp.strip())
+            self.doc_event_summary = result.get("summary_text", "No summary available")
+            self.doc_action_date = result.get("action_date", "unknown")
+            
+        except Exception as e:
+            # If parsing fails, set default values
+            print(f"Warning: Could not parse LLM response for {self.file_name}: {str(e)}")
+            self.doc_event_summary = "Document summary not available"
+            self.doc_action_date = "unknown"

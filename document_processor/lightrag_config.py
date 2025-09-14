@@ -21,7 +21,7 @@ GOOGLE_MODEL = "models/gemma-3-27b-it"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
 
-async def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs) -> str:
+def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs) -> str:
     """Working Google Gemini LLM function based on successful test"""
     try:
         # Use built-in API key
@@ -45,6 +45,31 @@ async def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwar
     except Exception as e:
         logger.error(f"Google Gemini API error: {e}")
         raise
+
+# async def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs) -> str:
+#     """Working Google Gemini LLM function based on successful test"""
+#     try:
+#         # Use built-in API key
+#         genai.configure(api_key=GOOGLE_API_KEY)
+        
+#         # Combine prompts
+#         combined_prompt = ""
+#         if system_prompt:
+#             combined_prompt += f"{system_prompt}\n"
+        
+#         for msg in (history_messages or []):
+#             combined_prompt += f"{msg['role']}: {msg['content']}\n"
+        
+#         combined_prompt += f"user: {prompt}"
+        
+#         # Generate response
+#         model = genai.GenerativeModel(GOOGLE_MODEL)
+#         response = model.generate_content(combined_prompt)
+#         return response.text
+        
+#     except Exception as e:
+#         logger.error(f"Google Gemini API error: {e}")
+#         raise
 
 
 async def embedding_func(texts: List[str]) -> np.ndarray:

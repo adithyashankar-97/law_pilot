@@ -11,7 +11,7 @@ import PyPDF2
 import pdfplumber
 from pathlib import Path
 import logging
-
+import pickle
 # Enhanced docling imports with latest API
 try:
     from docling.document_converter import DocumentConverter, PdfFormatOption, WordFormatOption, PowerpointFormatOption
@@ -38,21 +38,20 @@ logging.getLogger("pdfplumber").setLevel(logging.ERROR)
 class DocumentExtractor:
     """Extract text content from various document formats with enhanced docling support."""
     
-    def __init__(self, save_images=True, image_descriptions=True, 
-             source_dir="./data/source_docs", markdown_dir="./data/markdown_files"):
+    def __init__(self, save_images=True, image_descriptions=True):
         self.supported_formats = ['.pdf', '.txt', '.docx', '.pptx']
         self.save_images = save_images
         self.image_descriptions = image_descriptions
         
         # Add folder paths
-        self.source_dir = Path(source_dir)
-        self.markdown_dir = Path(markdown_dir)
+        # self.source_dir = Path(source_dir)
+        # self.markdown_dir = Path(markdown_dir)
         
         # Create directories
-        self.images_dir = Path("data/extracted_images")
-        self.images_dir.mkdir(parents=True, exist_ok=True)
-        self.source_dir.mkdir(parents=True, exist_ok=True)
-        self.markdown_dir.mkdir(parents=True, exist_ok=True)
+        # self.images_dir = Path("data/extracted_images")
+        # self.images_dir.mkdir(parents=True, exist_ok=True)
+        # self.source_dir.mkdir(parents=True, exist_ok=True)
+        # self.markdown_dir.mkdir(parents=True, exist_ok=True)
         
         # Setup docling converter once
         self._setup_docling_converter()
@@ -253,20 +252,20 @@ class DocumentExtractor:
         }
         
         if DOCLING_AVAILABLE and self.docling_converter:
-            try:
-                text_content, docling_metadata = self._extract_with_docling_latest(file_path)
-                metadata.update(docling_metadata)
-                metadata['extraction_method'] = 'docling_enhanced'
-                
-                if text_content and text_content.strip():
-                    return {
-                        'text': text_content.strip(),
-                        'metadata': metadata
-                    }
-                else:
-                    metadata['extraction_issues'].append("Docling returned empty content")
-            except Exception as e:
-                metadata['extraction_issues'].append(f"Docling enhanced failed: {str(e)}")
+            # try:
+            text_content, docling_metadata = self._extract_with_docling_latest(file_path)
+            metadata.update(docling_metadata)
+            metadata['extraction_method'] = 'docling_enhanced'
+            
+            if text_content and text_content.strip():
+                return {
+                    'text': text_content.strip(),
+                    'metadata': metadata
+                }
+            else:
+                metadata['extraction_issues'].append("Docling returned empty content")
+        #     except Exception as e:
+        #         metadata['extraction_issues'].append(f"Docling enhanced failed: {str(e)}")
         else:
             metadata['extraction_issues'].append("Docling not available")
         
@@ -290,20 +289,20 @@ class DocumentExtractor:
         
         # Method 1: Enhanced Docling (Primary) - using latest API
         if DOCLING_AVAILABLE and self.docling_converter:
-            try:
-                text_content, docling_metadata = self._extract_with_docling_latest(file_path)
-                metadata.update(docling_metadata)
-                metadata['extraction_method'] = 'docling_enhanced'
-                
-                if text_content and text_content.strip():
-                    return {
-                        'text': text_content.strip(),
-                        'metadata': metadata
-                    }
-                else:
-                    metadata['extraction_issues'].append("Docling returned empty content")
-            except Exception as e:
-                metadata['extraction_issues'].append(f"Docling enhanced failed: {str(e)}")
+            # try:
+            text_content, docling_metadata = self._extract_with_docling_latest(file_path)
+            metadata.update(docling_metadata)
+            metadata['extraction_method'] = 'docling_enhanced'
+            
+            if text_content and text_content.strip():
+                return {
+                    'text': text_content.strip(),
+                    'metadata': metadata
+                }
+            else:
+                metadata['extraction_issues'].append("Docling returned empty content")
+            # except Exception as e:
+            #     metadata['extraction_issues'].append(f"Docling enhanced failed: {str(e)}")
         else:
             metadata['extraction_issues'].append("Docling not available")
         
@@ -384,22 +383,16 @@ class DocumentExtractor:
     
     def _extract_with_docling_latest(self, file_path: str) -> tuple[str, Dict[str, Any]]:
         """Extract text using latest docling API with automatic image handling."""
-        try:
-            # Convert document using the pre-configured converter
+        # try:
+        # Convert document using the pre-configured converter
+        doc_name = Path(file_path).stem
+        output_dir = os.path.join(Path(file_path).parent, doc_name.split(".")[0])
+        markdown_file = Path(output_dir) / f"{doc_name}.md"
+        if not os.path.exists(markdown_file):
+            os.makedirs(output_dir, exist_ok=True)  # Use markdown_dir instead of current directory                
             result = self.docling_converter.convert(file_path)
             doc = result.document
-            
             # Create document-specific output directory for markdown and images
-            doc_name = Path(file_path).stem
-            output_dir = self.markdown_dir  # Use markdown_dir instead of current directory
-            
-            # Create images directory for this document
-            doc_image_dir = self.images_dir / doc_name
-            doc_image_dir.mkdir(exist_ok=True)
-            
-            # Save as markdown with proper image handling (latest API pattern)
-            markdown_file = output_dir / f"{doc_name}.md"
-            
             if self.save_images:
                 # Use REFERENCED mode to save images separately and create references
                 doc.save_as_markdown(
@@ -413,28 +406,28 @@ class DocumentExtractor:
                     image_mode=ImageRefMode.PLACEHOLDER
                 )
             
-            # Read the generated markdown content
-            with open(markdown_file, "r", encoding="utf-8") as f:
-                markdown_content = f.read()
+        # Read the generated markdown content
+        with open(markdown_file, "r", encoding="utf-8") as f:
+            markdown_content = f.read()
+        
+        # Count images and tables for metadata
+        image_count = self._count_markdown_images(markdown_content)
+        table_count = self._count_markdown_tables(markdown_content)
+        
+        # Prepare metadata
+        metadata = {
+            'extraction_method': 'docling_enhanced',
+            # 'pages': len(doc.pages) if hasattr(doc, 'pages') else None,
+            'tables_found': table_count,
+            'images_extracted': image_count,
+            'markdown_saved': str(markdown_file),
+            'extraction_issues': []
+        }
+        
+        return markdown_content, metadata
             
-            # Count images and tables for metadata
-            image_count = self._count_markdown_images(markdown_content)
-            table_count = self._count_markdown_tables(markdown_content)
-            
-            # Prepare metadata
-            metadata = {
-                'extraction_method': 'docling_enhanced',
-                'pages': len(doc.pages) if hasattr(doc, 'pages') else None,
-                'tables_found': table_count,
-                'images_extracted': image_count,
-                'markdown_saved': str(markdown_file),
-                'extraction_issues': []
-            }
-            
-            return markdown_content, metadata
-            
-        except Exception as e:
-            raise Exception(f"Enhanced docling extraction failed: {str(e)}")
+        # except Exception as e:
+        #     raise Exception(f"Enhanced docling extraction failed: {str(e)}")
     
     def _count_markdown_images(self, markdown_content: str) -> int:
         """Count image references in markdown content."""
