@@ -16,7 +16,7 @@ from lightrag.kg.shared_storage import initialize_pipeline_status
 logger = logging.getLogger(__name__)
 
 # Configuration - PUT YOUR API KEY HERE
-GOOGLE_API_KEY = "AIzaSyC7PyJd1PWkVT9Wk95GphulPb_ztonEbQI"  # Replace with your actual key
+GOOGLE_API_KEY =  # Replace with your actual key
 GOOGLE_MODEL = "models/gemma-3-27b-it"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
 
